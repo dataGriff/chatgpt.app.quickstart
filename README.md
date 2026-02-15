@@ -148,6 +148,10 @@ npx @modelcontextprotocol/inspector
 
 [mcpjam](https://www.mcpjam.com/) provides tools for debugging and testing MCP servers during development.
 
+```bash
+npx @mcpjam/inspector@latest
+```
+
 ### curl
 
 Test the REST API directly — see the [API Reference](docs/api-reference.md) for all endpoints.
