@@ -39,14 +39,24 @@ Include a scope when the change affects a specific part of the codebase:
 
 ## Project Guidelines
 
-- This is a Node.js project with ES modules (`"type": "module"`)
-- Dependencies: Model Context Protocol SDK, type validation with Zod
-- Server runs in `server.js`
-- UI widget in `public/todo-widget.html`
+- This is a template Todo MCP Server built with Node.js and ES modules (`"type": "module"`)
+- Dependencies: `@modelcontextprotocol/sdk`, `@modelcontextprotocol/ext-apps`, `zod`
+- Entry point: `server.js` — HTTP server with request routing
+- MCP tools: `mcp/todoTools.js` — tool and resource registration
+- REST API: `routes/todoRoutes.js` — HTTP route handlers
+- Business logic: `services/todoService.js` — TodoService class
+- UI widget: `public/todo-widget.html` — interactive HTML/JS widget
+- Data: `data/todos.json` — persisted todo state (gitignored)
+- Docs: `docs/` — architecture, API reference, MCP tools, contributing
 
 ## Code Standards
 
+- All data mutations go through `TodoService` methods — never mutate `todoService.todos` directly
+- MCP tools call `TodoService` directly — no internal HTTP simulation
+- Zod schemas handle MCP input validation — don't duplicate checks in tool handlers
+- Atomic save pattern — write to disk before updating in-memory state
+- Body size limit (1 MB) on all POST endpoints
 - Follow the existing code style
 - Keep commits focused and atomic
 - Write clear, descriptive commit messages
-- Test changes before committing
+- Test changes before committing (`node server.js` + curl testing)

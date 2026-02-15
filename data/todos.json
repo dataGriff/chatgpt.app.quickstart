@@ -1,25 +1,10 @@
 {
   "todos": [
     {
-      "id": "todo-4",
-      "title": "Review pull requests",
-      "completed": true
-    },
-    {
-      "id": "todo-5",
-      "title": "Deploy to production",
-      "completed": true
-    },
-    {
-      "id": "todo-6",
-      "title": "Test refactored code",
-      "completed": true
-    },
-    {
-      "id": "todo-7",
-      "title": "wash the car",
-      "completed": true
+      "id": "todo-12",
+      "title": "talk about mcp jam tomorrow",
+      "completed": false
     }
   ],
-  "nextId": 12
+  "nextId": 13
 }

@@ -1,152 +1,174 @@
-# chatgpt.app.quickstart
+# Todo MCP Server
 
-Following [chatgpt quick start](https://developers.openai.com/apps-sdk/quickstart/).
+A template todo application that demonstrates how to build a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server with an interactive UI widget for [ChatGPT Apps](https://developers.openai.com/apps-sdk/quickstart/).
 
-Looks good [mcpjam](https://www.mcpjam.com/).
+The server exposes a todo list through both **MCP tools** (for AI assistants) and a **REST API** (for direct HTTP access), backed by a shared service layer and JSON file persistence.
 
-Good medium blogs:
+## Quick Start
 
-- [Start building your first ChatGPT app](https://medium.com/@kenzic/getting-started-building-your-first-chatgpt-app-a3ab54d45f23)
+```bash
+# Install dependencies
+npm install
+
+# Start the server
+node server.js
+```
+
+The server starts at **http://localhost:8787** with:
+
+- MCP endpoint: `http://localhost:8787/mcp`
+- REST API: `http://localhost:8787/api/todos`
+
+### Try the API
+
+```bash
+# List todos
+curl http://localhost:8787/api/todos
+
+# Add a todo
+curl -X POST http://localhost:8787/api/todos \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Buy groceries"}'
+
+# Complete a todo
+curl -X PUT http://localhost:8787/api/todos/todo-1
+
+# Delete a todo
+curl -X DELETE http://localhost:8787/api/todos/todo-1
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8787` | Server listen port |
+| `TODO_DATA_FILE` | `data/todos.json` | Path to the todo data file |
+
 ## Architecture
 
 ```mermaid
 graph TB
-    subgraph Client ["Client Layer"]
-        MCP["MCP Client<br/>(ChatGPT App)"]
-        Widget["Todo Widget<br/>(HTML/JS)"]
+    subgraph Clients ["Clients"]
+        ChatGPT["ChatGPT / MCP Client"]
+        Widget["Todo Widget<br/>(HTML/JS iframe)"]
+        HTTP["HTTP Client<br/>(curl, fetch, etc.)"]
     end
-    
-    subgraph Transport ["Transport Layer"]
-        HTTPS["HTTP/StreamableTransport<br/>Port 8787"]
+
+    subgraph Server ["Node.js HTTP Server · port 8787"]
+        Router["Request Router<br/>(server.js)"]
+
+        subgraph MCP ["MCP Layer · /mcp"]
+            McpServer["McpServer"]
+            Transport["StreamableHTTPServerTransport"]
+            Tools["6 MCP Tools"]
+            Resource["App Resource:<br/>todo-widget"]
+        end
+
+        subgraph REST ["REST API · /api/todos"]
+            Routes["todoRoutes.js<br/>GET · POST · PUT · DELETE"]
+        end
     end
-    
-    subgraph Server ["MCP Server Layer"]
-        McpServer["MCP Server<br/>(todo-app v0.1.0)"]
+
+    subgraph Service ["Service Layer"]
+        TodoService["TodoService<br/>(business logic)"]
     end
-    
-    subgraph Resources ["Resources & Tools"]
-        WidgetResource["Resource:<br/>todo-widget<br/>ui://widget/todo.html"]
-        
-        Tools["Tools:"]
-        AddTodo["add_todo<br/>- title"]
-        ListTodos["list_todos<br/>- no params"]
-        CompleteTodo["complete_todo<br/>- id"]
-        CompleteByIndex["complete_todo_by_index<br/>- index 1,2,3..."]
-        CompleteByTitle["complete_todo_by_title<br/>- title search"]
+
+    subgraph Storage ["Storage"]
+        Memory["In-memory array"]
+        Disk["data/todos.json"]
     end
-    
-    subgraph State ["State Management"]
-        TodosArray["todos array<br/>(in-memory)"]
-        NextId["nextId counter"]
-    end
-    
-    MCP -->|JSON-RPC| HTTPS
-    Widget -->|postMessage<br/>JSON-RPC| HTTPS
-    HTTPS -->|StreamableHTTPServerTransport| McpServer
-    McpServer --> WidgetResource
-    McpServer --> AddTodo
-    McpServer --> ListTodos
-    McpServer --> CompleteTodo
-    McpServer --> CompleteByIndex
-    McpServer --> CompleteByTitle
-    
-    AddTodo --> TodosArray
-    ListTodos --> TodosArray
-    CompleteTodo --> TodosArray
-    CompleteByIndex --> TodosArray
-    CompleteByTitle --> TodosArray
-    AddTodo --> NextId
-    
-    style Client fill:#0277bd,color:#fff,stroke:#01579b,stroke-width:2px
-    style Transport fill:#7b1fa2,color:#fff,stroke:#4a148c,stroke-width:2px
-    style Server fill:#00796b,color:#fff,stroke:#004d40,stroke-width:2px
-    style Resources fill:#f57f17,color:#fff,stroke:#e65100,stroke-width:2px
-    style State fill:#c2185b,color:#fff,stroke:#880e4f,stroke-width:2px
-    style WidgetResource fill:#f57f17,color:#fff
-    style Tools fill:#f57f17,color:#fff
-    style AddTodo fill:#ff9800,color:#fff
-    style ListTodos fill:#ff9800,color:#fff
-    style CompleteTodo fill:#ff9800,color:#fff
-    style CompleteByIndex fill:#ff9800,color:#fff
-    style CompleteByTitle fill:#ff9800,color:#fff
-    style TodosArray fill:#e91e63,color:#fff
-    style NextId fill:#e91e63,color:#fff
+
+    ChatGPT -->|"JSON-RPC over HTTP"| Router
+    Widget -->|"postMessage → JSON-RPC"| Router
+    HTTP -->|"REST"| Router
+
+    Router -->|"/mcp"| Transport
+    Transport --> McpServer
+    McpServer --> Tools
+    McpServer --> Resource
+
+    Router -->|"/api/todos"| Routes
+
+    Tools --> TodoService
+    Routes --> TodoService
+
+    TodoService --> Memory
+    TodoService -->|persist| Disk
+
+    style Clients fill:#0277bd,color:#fff,stroke:#01579b
+    style MCP fill:#00796b,color:#fff,stroke:#004d40
+    style REST fill:#7b1fa2,color:#fff,stroke:#4a148c
+    style Service fill:#f57f17,color:#000,stroke:#e65100
+    style Storage fill:#c2185b,color:#fff,stroke:#880e4f
 ```
 
-## Architecture (with Service/API Layer)
+### MCP Tools
 
-```mermaid
-graph TB
-    subgraph Client ["Client Layer"]
-        MCP["MCP Client<br/>(ChatGPT App)"]
-        Widget["Todo Widget<br/>(HTML/JS)"]
-    end
+| Tool | Description | Input |
+|------|-------------|-------|
+| `add_todo` | Create a new todo | `title` (string) |
+| `list_todos` | List all todos with summary | *(none)* |
+| `complete_todo` | Complete by ID | `id` (string) |
+| `complete_todo_by_index` | Complete by position (1-based) | `index` (integer) |
+| `complete_todo_by_title` | Complete by title search | `title` (string) |
+| `delete_completed` | Remove all completed todos | *(none)* |
 
-    subgraph Transport ["Transport Layer"]
-        HTTPS["HTTP/StreamableTransport<br/>Port 8787"]
-    end
+### Project Structure
 
-    subgraph Server ["MCP Server Layer"]
-        McpServer["MCP Server<br/>(todo-app v0.1.0)"]
-    end
-
-    subgraph Resources ["Resources & Tools"]
-        WidgetResource["Resource:<br/>todo-widget<br/>ui://widget/todo.html"]
-        AddTodo["add_todo"]
-        ListTodos["list_todos"]
-        CompleteTodo["complete_todo"]
-        CompleteByIndex["complete_todo_by_index"]
-        CompleteByTitle["complete_todo_by_title"]
-    end
-
-    subgraph Services ["Service/API Layer"]
-        TodoService["TodoService<br/>(business rules)"]
-    end
-
-    subgraph State ["State Management"]
-        TodosArray["todos array<br/>(in-memory)"]
-        NextId["nextId counter"]
-    end
-
-    MCP -->|JSON-RPC| HTTPS
-    Widget -->|postMessage<br/>JSON-RPC| HTTPS
-    HTTPS -->|StreamableHTTPServerTransport| McpServer
-    McpServer --> WidgetResource
-    McpServer --> AddTodo
-    McpServer --> ListTodos
-    McpServer --> CompleteTodo
-    McpServer --> CompleteByIndex
-    McpServer --> CompleteByTitle
-
-    AddTodo --> TodoService
-    ListTodos --> TodoService
-    CompleteTodo --> TodoService
-    CompleteByIndex --> TodoService
-    CompleteByTitle --> TodoService
-
-    TodoService --> TodosArray
-    TodoService --> NextId
-
-    style Client fill:#0277bd,color:#fff,stroke:#01579b,stroke-width:2px
-    style Transport fill:#7b1fa2,color:#fff,stroke:#4a148c,stroke-width:2px
-    style Server fill:#00796b,color:#fff,stroke:#004d40,stroke-width:2px
-    style Resources fill:#f57f17,color:#fff,stroke:#e65100,stroke-width:2px
-    style Services fill:#5d4037,color:#fff,stroke:#3e2723,stroke-width:2px
-    style State fill:#c2185b,color:#fff,stroke:#880e4f,stroke-width:2px
+```
+├── server.js                 # HTTP server & request routing
+├── mcp/
+│   └── todoTools.js          # MCP tool & resource registration
+├── routes/
+│   └── todoRoutes.js         # REST API route handlers
+├── services/
+│   └── todoService.js        # Business logic & persistence
+├── public/
+│   └── todo-widget.html      # Interactive todo widget (HTML/JS)
+├── data/
+│   └── todos.json            # Persisted data (gitignored)
+└── docs/
+    ├── architecture.md       # Detailed architecture documentation
+    ├── api-reference.md      # REST API reference
+    ├── mcp-tools.md          # MCP tools reference
+    └── contributing.md       # Contributing guidelines
 ```
 
-> **Tip:** Install the [Markdown Preview Mermaid Support](https://marketplace.visualstudio.com/items?itemName=bierner.markdown-mermaid) extension to render Mermaid diagrams in VS Code's markdown preview.
+## Debugging & Testing
 
-### Components
+### MCP Inspector
 
-- **Client Layer**: MCP client (ChatGPT App) and interactive todo widget
-- **Transport**: HTTP server on port 8787 using StreamableTransport for MCP communication
-- **MCP Server**: Serves resources and tools following the Model Context Protocol
-- **Resource**: Interactive todo widget UI served at `ui://widget/todo.html`
-- **Tools** (5 available):
-  - `add_todo` - Add a new todo with a title
-  - `list_todos` - List all todos with IDs and completion status
-  - `complete_todo` - Complete a todo by ID
-  - `complete_todo_by_index` - Complete a todo by position (1, 2, 3...)
-  - `complete_todo_by_title` - Complete a todo by searching title
-- **State**: In-memory todos array and ID counter (stored in memory)
+Use [MCP Inspector](https://github.com/modelcontextprotocol/inspector) to test MCP tools interactively:
+
+```bash
+npx @modelcontextprotocol/inspector
+```
+
+### mcpjam
+
+[mcpjam](https://www.mcpjam.com/) provides tools for debugging and testing MCP servers during development.
+
+### curl
+
+Test the REST API directly — see the [API Reference](docs/api-reference.md) for all endpoints.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | System design, layers, and design decisions |
+| [API Reference](docs/api-reference.md) | REST API endpoints, request/response shapes |
+| [MCP Tools](docs/mcp-tools.md) | MCP tool definitions, inputs, and transport details |
+| [Contributing](docs/contributing.md) | Code standards, commit conventions, and setup |
+
+## References
+
+- [ChatGPT Apps SDK Quick Start](https://developers.openai.com/apps-sdk/quickstart/) — official guide for building ChatGPT apps
+- [Model Context Protocol](https://modelcontextprotocol.io/) — the MCP specification
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) — `@modelcontextprotocol/sdk` package
+- [MCP Apps Extension](https://github.com/nicholasgriffintn/mcp-apps) — `@modelcontextprotocol/ext-apps` for widget resources
+- [MCP Inspector](https://github.com/modelcontextprotocol/inspector) — interactive MCP testing tool
+- [mcpjam](https://www.mcpjam.com/) — MCP development and debugging tools
+- [Zod](https://zod.dev/) — TypeScript-first schema validation
+- [Start building your first ChatGPT app](https://medium.com/@kenzic/getting-started-building-your-first-chatgpt-app-a3ab54d45f23) — step-by-step tutorial
+- [Conventional Commits](https://www.conventionalcommits.org/) — commit message specification
