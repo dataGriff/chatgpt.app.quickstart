@@ -3,8 +3,8 @@
     {
       "id": "todo-1",
       "title": "Feed the fish",
-      "completed": false
+      "completed": true
     }
   ],
-  "nextId": 2
+  "nextId": 3
 }

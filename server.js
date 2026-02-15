@@ -116,11 +116,11 @@ function createTodoServer() {
       if (list.length === 0) {
         return replyWithTodos("No todos yet.", list);
       }
-      const todoList = list
-        .map((task) => `[${task.id}] ${task.completed ? "✓" : " "} ${task.title}`)
-        .join("\n");
+      const completed = list.filter(t => t.completed).length;
+      const total = list.length;
+      const summary = `You have ${total} task${total !== 1 ? 's' : ''} (${completed} completed, ${total - completed} remaining)`;
       return {
-        content: [{ type: "text", text: todoList }],
+        content: [{ type: "text", text: summary }],
         structuredContent: { tasks: list },
       };
     }
@@ -202,6 +202,33 @@ function createTodoServer() {
 
 const port = Number(process.env.PORT ?? 8787);
 const MCP_PATH = "/mcp";
+const API_BASE = "/api/todos";
+
+// Helper to parse JSON request body
+const parseJsonBody = (req) =>
+  new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+
+// Helper to send JSON response
+const sendJson = (res, statusCode, data) => {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify(data, null, 2));
+};
 
 const httpServer = createServer(async (req, res) => {
   if (!req.url) {
@@ -211,10 +238,11 @@ const httpServer = createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
 
-  if (req.method === "OPTIONS" && url.pathname === MCP_PATH) {
+  // Handle CORS preflight for both API and MCP
+  if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+      "Access-Control-Allow-Methods": "POST, GET, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "content-type, mcp-session-id",
       "Access-Control-Expose-Headers": "Mcp-Session-Id",
     });
@@ -225,6 +253,64 @@ const httpServer = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "content-type": "text/plain" }).end("Todo MCP server");
     return;
+  }
+
+  // REST API endpoints
+  if (url.pathname === API_BASE) {
+    if (req.method === "GET") {
+      // List all todos
+      const todos = todoService.list();
+      sendJson(res, 200, { todos });
+      return;
+    }
+
+    if (req.method === "POST") {
+      // Add a new todo
+      try {
+        const body = await parseJsonBody(req);
+        const title = body.title?.trim?.();
+        if (!title) {
+          sendJson(res, 400, { error: "Missing or empty title" });
+          return;
+        }
+        const todo = await todoService.add(title);
+        sendJson(res, 201, { todo, todos: todoService.list() });
+      } catch (error) {
+        console.error("Error adding todo:", error);
+        sendJson(res, 400, { error: "Invalid request body" });
+      }
+      return;
+    }
+  }
+
+  // Match /api/todos/:id pattern
+  const apiIdMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/);
+  if (apiIdMatch) {
+    const id = apiIdMatch[1];
+
+    if (req.method === "PUT") {
+      // Complete a todo by id
+      const result = await todoService.completeById(id);
+      if (!result.ok) {
+        sendJson(res, 404, { error: `Todo ${id} not found` });
+        return;
+      }
+      sendJson(res, 200, { todo: result.todo, todos: todoService.list() });
+      return;
+    }
+
+    if (req.method === "DELETE") {
+      // Delete a todo by id
+      const todo = todoService.list().find((t) => t.id === id);
+      if (!todo) {
+        sendJson(res, 404, { error: `Todo ${id} not found` });
+        return;
+      }
+      todoService.todos = todoService.list().filter((t) => t.id !== id);
+      await todoService.save();
+      sendJson(res, 200, { todo, todos: todoService.list() });
+      return;
+    }
   }
 
   const MCP_METHODS = new Set(["POST", "GET", "DELETE"]);
@@ -260,6 +346,12 @@ const httpServer = createServer(async (req, res) => {
 
 httpServer.listen(port, () => {
   console.log(
-    `Todo MCP server listening on http://localhost:${port}${MCP_PATH}`
+    `Todo server listening on http://localhost:${port}`
+  );
+  console.log(
+    `  MCP endpoint: http://localhost:${port}${MCP_PATH}`
+  );
+  console.log(
+    `  REST API: http://localhost:${port}${API_BASE}`
   );
 });
