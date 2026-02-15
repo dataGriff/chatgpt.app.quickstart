@@ -105,6 +105,44 @@
       li[data-busy="true"] {
         opacity: 0.7;
       }
+
+      .empty-state {
+        text-align: center;
+        color: #8a92a6;
+        padding: 20px;
+        font-size: 0.9rem;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .controls button {
+        border: 1px solid #cad3e0;
+        border-radius: 10px;
+        background: #fff;
+        color: #0b0b0f;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+
+      .controls button:hover {
+        background: #f2f4fb;
+      }
+
+      .controls button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .task-id {
+        font-size: 0.75rem;
+        color: #a0aab8;
+        font-family: monospace;
+      }
     </style>
   </head>
   <body>
@@ -114,7 +152,12 @@
         <input id="todo-input" name="title" placeholder="Add a task" />
         <button type="submit">Add</button>
       </form>
+      <div class="controls">
+        <button id="refresh-btn" type="button">Refresh</button>
+        <button id="clear-btn" type="button">Clear completed</button>
+      </div>
       <ul id="todo-list"></ul>
+      <div id="empty-state" class="empty-state" style="display: none;">No tasks yet. Add one to get started!</div>
     </main>
 
     <script type="module">
@@ -122,14 +165,26 @@
       const formEl = document.querySelector("#add-form");
       const inputEl = document.querySelector("#todo-input");
       const addButtonEl = formEl.querySelector('button[type="submit"]');
+      const refreshBtn = document.querySelector("#refresh-btn");
+      const clearBtn = document.querySelector("#clear-btn");
+      const emptyStateEl = document.querySelector("#empty-state");
       const addButtonText = addButtonEl.textContent;
 
       let tasks = [];
       let isAdding = false;
+      let isRefreshing = false;
       const busyTodoIds = new Set();
 
       const render = () => {
         listEl.innerHTML = "";
+        
+        if (tasks.length === 0) {
+          emptyStateEl.style.display = "block";
+          return;
+        }
+        
+        emptyStateEl.style.display = "none";
+        
         tasks.forEach((task) => {
           const li = document.createElement("li");
           li.dataset.id = task.id;
@@ -146,11 +201,21 @@
           checkbox.checked = Boolean(task.completed);
           checkbox.disabled = busyTodoIds.has(task.id);
 
+          const textContainer = document.createElement("div");
+          textContainer.style.flex = "1";
+          
           const span = document.createElement("span");
           span.textContent = task.title;
-
+          
+          const idSpan = document.createElement("span");
+          idSpan.className = "task-id";
+          idSpan.textContent = ` (${task.id})`;
+          
+          textContainer.appendChild(span);
+          textContainer.appendChild(idSpan);
+          
           label.appendChild(checkbox);
-          label.appendChild(span);
+          label.appendChild(textContainer);
           li.appendChild(label);
           listEl.appendChild(li);
         });
@@ -292,6 +357,38 @@
           busyTodoIds.delete(id);
           render();
         }
+      });
+
+      refreshBtn.addEventListener("click", async () => {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        refreshBtn.disabled = true;
+        const originalText = refreshBtn.textContent;
+        refreshBtn.textContent = "Refreshing…";
+
+        try {
+          await callTodoTool("list_todos", {});
+        } catch (error) {
+          console.error("Failed to list todos:", error);
+        } finally {
+          isRefreshing = false;
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalText;
+        }
+      });
+
+      clearBtn.addEventListener("click", () => {
+        const completedIds = tasks
+          .filter((task) => task.completed)
+          .map((task) => task.id);
+        
+        if (completedIds.length === 0) {
+          alert("No completed tasks to clear.");
+          return;
+        }
+
+        tasks = tasks.filter((task) => !task.completed);
+        render();
       });
 
       render();

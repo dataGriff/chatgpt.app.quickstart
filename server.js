@@ -19,6 +19,14 @@ const completeTodoInputSchema = {
   id: z.string().min(1),
 };
 
+const completeTodoByIndexInputSchema = {
+  index: z.number().int().min(1),
+};
+
+const completeTodoByTitleInputSchema = {
+  title: z.string().min(1),
+};
+
 let todos = [];
 let nextId = 1;
 
@@ -87,6 +95,95 @@ function createTodoServer() {
 
       todos = todos.map((task) =>
         task.id === id ? { ...task, completed: true } : task
+      );
+
+      return replyWithTodos(`Completed "${todo.title}".`);
+    }
+  );
+
+  registerAppTool(
+    server,
+    "list_todos",
+    {
+      title: "List todos",
+      description: "Returns a list of all todos with their IDs and completion status.",
+      inputSchema: {},
+      _meta: {
+        ui: { resourceUri: "ui://widget/todo.html" },
+      },
+    },
+    async (args) => {
+      if (todos.length === 0) {
+        return replyWithTodos("No todos yet.");
+      }
+      const todoList = todos
+        .map((task) => `[${task.id}] ${task.completed ? "✓" : " "} ${task.title}`)
+        .join("\n");
+      return {
+        content: [{ type: "text", text: todoList }],
+        structuredContent: { tasks: todos },
+      };
+    }
+  );
+
+  registerAppTool(
+    server,
+    "complete_todo_by_index",
+    {
+      title: "Complete todo by position",
+      description: "Marks a todo as done by its position in the list (1 = first task, 2 = second, etc).",
+      inputSchema: completeTodoByIndexInputSchema,
+      _meta: {
+        ui: { resourceUri: "ui://widget/todo.html" },
+      },
+    },
+    async (args) => {
+      const index = args?.index;
+      if (!index) return replyWithTodos("Missing todo index.");
+      if (index < 1 || index > todos.length) {
+        return replyWithTodos(`Invalid index. There are only ${todos.length} todo(s).`);
+      }
+
+      const todo = todos[index - 1];
+      if (todo.completed) {
+        return replyWithTodos(`"${todo.title}" is already completed.`);
+      }
+
+      todos = todos.map((task, i) =>
+        i === index - 1 ? { ...task, completed: true } : task
+      );
+
+      return replyWithTodos(`Completed "${todo.title}" (task #${index}).`);
+    }
+  );
+
+  registerAppTool(
+    server,
+    "complete_todo_by_title",
+    {
+      title: "Complete todo by title",
+      description: "Marks a todo as done by searching for a matching title (partial match supported).",
+      inputSchema: completeTodoByTitleInputSchema,
+      _meta: {
+        ui: { resourceUri: "ui://widget/todo.html" },
+      },
+    },
+    async (args) => {
+      const searchTitle = args?.title?.trim?.() ?? "";
+      if (!searchTitle) return replyWithTodos("Missing search title.");
+
+      const todo = todos.find(
+        (task) =>
+          !task.completed &&
+          task.title.toLowerCase().includes(searchTitle.toLowerCase())
+      );
+
+      if (!todo) {
+        return replyWithTodos(`No incomplete todo found matching "${searchTitle}".`);
+      }
+
+      todos = todos.map((task) =>
+        task.id === todo.id ? { ...task, completed: true } : task
       );
 
       return replyWithTodos(`Completed "${todo.title}".`);
