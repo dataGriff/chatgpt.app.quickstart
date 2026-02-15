@@ -8,6 +8,7 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { TodoService } from "./services/todoService.js";
 
 const todoHtml = readFileSync("public/todo-widget.html", "utf8");
 
@@ -27,12 +28,12 @@ const completeTodoByTitleInputSchema = {
   title: z.string().min(1),
 };
 
-let todos = [];
-let nextId = 1;
+const dataFile = process.env.TODO_DATA_FILE ?? "data/todos.json";
+const todoService = await TodoService.create(dataFile);
 
-const replyWithTodos = (message) => ({
+const replyWithTodos = (message, tasks) => ({
   content: message ? [{ type: "text", text: message }] : [],
-  structuredContent: { tasks: todos },
+  structuredContent: { tasks },
 });
 
 function createTodoServer() {
@@ -67,10 +68,9 @@ function createTodoServer() {
     },
     async (args) => {
       const title = args?.title?.trim?.() ?? "";
-      if (!title) return replyWithTodos("Missing title.");
-      const todo = { id: `todo-${nextId++}`, title, completed: false };
-      todos = [...todos, todo];
-      return replyWithTodos(`Added "${todo.title}".`);
+      if (!title) return replyWithTodos("Missing title.", todoService.list());
+      const todo = await todoService.add(title);
+      return replyWithTodos(`Added "${todo.title}".`, todoService.list());
     }
   );
 
@@ -87,17 +87,16 @@ function createTodoServer() {
     },
     async (args) => {
       const id = args?.id;
-      if (!id) return replyWithTodos("Missing todo id.");
-      const todo = todos.find((task) => task.id === id);
-      if (!todo) {
-        return replyWithTodos(`Todo ${id} was not found.`);
+      if (!id) return replyWithTodos("Missing todo id.", todoService.list());
+      const result = await todoService.completeById(id);
+      if (!result.ok) {
+        return replyWithTodos(`Todo ${id} was not found.`, todoService.list());
       }
 
-      todos = todos.map((task) =>
-        task.id === id ? { ...task, completed: true } : task
+      return replyWithTodos(
+        `Completed "${result.todo.title}".`,
+        todoService.list()
       );
-
-      return replyWithTodos(`Completed "${todo.title}".`);
     }
   );
 
@@ -112,16 +111,17 @@ function createTodoServer() {
         ui: { resourceUri: "ui://widget/todo.html" },
       },
     },
-    async (args) => {
-      if (todos.length === 0) {
-        return replyWithTodos("No todos yet.");
+    async () => {
+      const list = todoService.list();
+      if (list.length === 0) {
+        return replyWithTodos("No todos yet.", list);
       }
-      const todoList = todos
+      const todoList = list
         .map((task) => `[${task.id}] ${task.completed ? "✓" : " "} ${task.title}`)
         .join("\n");
       return {
         content: [{ type: "text", text: todoList }],
-        structuredContent: { tasks: todos },
+        structuredContent: { tasks: list },
       };
     }
   );
@@ -139,21 +139,29 @@ function createTodoServer() {
     },
     async (args) => {
       const index = args?.index;
-      if (!index) return replyWithTodos("Missing todo index.");
-      if (index < 1 || index > todos.length) {
-        return replyWithTodos(`Invalid index. There are only ${todos.length} todo(s).`);
+      if (!index) {
+        return replyWithTodos("Missing todo index.", todoService.list());
       }
 
-      const todo = todos[index - 1];
-      if (todo.completed) {
-        return replyWithTodos(`"${todo.title}" is already completed.`);
+      const result = await todoService.completeByIndex(index);
+      if (!result.ok && result.reason === "invalid_index") {
+        return replyWithTodos(
+          `Invalid index. There are only ${todoService.list().length} todo(s).`,
+          todoService.list()
+        );
       }
 
-      todos = todos.map((task, i) =>
-        i === index - 1 ? { ...task, completed: true } : task
+      if (result.todo.completed) {
+        return replyWithTodos(
+          `"${result.todo.title}" is already completed.`,
+          todoService.list()
+        );
+      }
+
+      return replyWithTodos(
+        `Completed "${result.todo.title}" (task #${index}).`,
+        todoService.list()
       );
-
-      return replyWithTodos(`Completed "${todo.title}" (task #${index}).`);
     }
   );
 
@@ -170,23 +178,22 @@ function createTodoServer() {
     },
     async (args) => {
       const searchTitle = args?.title?.trim?.() ?? "";
-      if (!searchTitle) return replyWithTodos("Missing search title.");
-
-      const todo = todos.find(
-        (task) =>
-          !task.completed &&
-          task.title.toLowerCase().includes(searchTitle.toLowerCase())
-      );
-
-      if (!todo) {
-        return replyWithTodos(`No incomplete todo found matching "${searchTitle}".`);
+      if (!searchTitle) {
+        return replyWithTodos("Missing search title.", todoService.list());
       }
 
-      todos = todos.map((task) =>
-        task.id === todo.id ? { ...task, completed: true } : task
-      );
+      const result = await todoService.completeByTitle(searchTitle);
+      if (!result.ok) {
+        return replyWithTodos(
+          `No incomplete todo found matching "${searchTitle}".`,
+          todoService.list()
+        );
+      }
 
-      return replyWithTodos(`Completed "${todo.title}".`);
+      return replyWithTodos(
+        `Completed "${result.todo.title}".`,
+        todoService.list()
+      );
     }
   );
 

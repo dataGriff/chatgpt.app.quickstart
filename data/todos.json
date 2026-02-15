@@ -1,0 +1,10 @@
+{
+  "todos": [
+    {
+      "id": "todo-1",
+      "title": "Feed the fish",
+      "completed": false
+    }
+  ],
+  "nextId": 2
+}
