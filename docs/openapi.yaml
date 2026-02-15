@@ -1,0 +1,390 @@
+openapi: 3.0.0
+info:
+  title: Todo REST API
+  description: A REST API for managing a simple todo list with support for listing, creating, completing, and deleting todos.
+  version: 1.0.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8787
+    description: Local development server
+  - url: https://example.com
+    description: Production server (if deployed)
+
+paths:
+  /api/todos:
+    get:
+      summary: List all todos
+      description: Retrieves a list of all todos (both completed and incomplete)
+      operationId: listTodos
+      tags:
+        - Todos
+      responses:
+        '200':
+          description: Successfully retrieved all todos
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - todos
+                properties:
+                  todos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Todo'
+              examples:
+                empty:
+                  value:
+                    todos: []
+                with_todos:
+                  value:
+                    todos:
+                      - id: todo-1
+                        title: Buy groceries
+                        completed: false
+                      - id: todo-2
+                        title: Walk the dog
+                        completed: true
+
+    post:
+      summary: Create a new todo
+      description: Creates a new todo with the specified title. Returns the created todo and the full todos list.
+      operationId: createTodo
+      tags:
+        - Todos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  description: The title of the todo
+            examples:
+              add_todo:
+                value:
+                  title: Buy groceries
+      responses:
+        '201':
+          description: Todo successfully created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - todo
+                  - todos
+                properties:
+                  todo:
+                    $ref: '#/components/schemas/Todo'
+                  todos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Todo'
+              examples:
+                success:
+                  value:
+                    todo:
+                      id: todo-1
+                      title: Buy groceries
+                      completed: false
+                    todos:
+                      - id: todo-1
+                        title: Buy groceries
+                        completed: false
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_title:
+                  value:
+                    error: Missing or empty title
+                invalid_json:
+                  value:
+                    error: Invalid request body
+
+        '413':
+          description: Request body too large (exceeds 1 MB limit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                too_large:
+                  value:
+                    error: Request body too large
+
+  /api/todos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "The unique identifier of the todo (e.g., todo-1)"
+        schema:
+          type: string
+          pattern: "^todo-[0-9]+$"
+
+    put:
+      summary: Complete a todo by ID
+      description: Marks a todo as completed. This operation is idempotent — completing an already-completed todo returns success without changes.
+      operationId: completeTodoById
+      tags:
+        - Todos
+      responses:
+        '200':
+          description: Todo successfully marked as completed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - todo
+                  - todos
+                properties:
+                  todo:
+                    $ref: '#/components/schemas/Todo'
+                  todos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Todo'
+              examples:
+                success:
+                  value:
+                    todo:
+                      id: todo-1
+                      title: Buy groceries
+                      completed: true
+                    todos:
+                      - id: todo-1
+                        title: Buy groceries
+                        completed: true
+
+        '404':
+          description: Todo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  value:
+                    error: Todo todo-99 not found
+
+    delete:
+      summary: Delete a todo by ID
+      description: Permanently removes a todo from the list.
+      operationId: deleteTodoById
+      tags:
+        - Todos
+      responses:
+        '200':
+          description: Todo successfully deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - todo
+                  - todos
+                properties:
+                  todo:
+                    $ref: '#/components/schemas/Todo'
+                  todos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Todo'
+              examples:
+                success:
+                  value:
+                    todo:
+                      id: todo-1
+                      title: Buy groceries
+                      completed: false
+                    todos: []
+
+        '404':
+          description: Todo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  value:
+                    error: Todo todo-99 not found
+
+  /api/todos/complete-by-index:
+    post:
+      summary: Complete a todo by index
+      description: Marks the todo at the specified 1-based index as completed. Index must be between 1 and the number of todos.
+      operationId: completeTodoByIndex
+      tags:
+        - Todos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - index
+              properties:
+                index:
+                  type: integer
+                  minimum: 1
+                  description: 1-based index of the todo (1 = first, 2 = second, etc.)
+            examples:
+              by_index:
+                value:
+                  index: 1
+      responses:
+        '200':
+          description: Todo successfully marked as completed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - todo
+                  - todos
+                properties:
+                  todo:
+                    $ref: '#/components/schemas/Todo'
+                  todos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Todo'
+              examples:
+                success:
+                  value:
+                    todo:
+                      id: todo-1
+                      title: Buy groceries
+                      completed: true
+                    todos:
+                      - id: todo-1
+                        title: Buy groceries
+                        completed: true
+
+        '400':
+          description: Invalid index
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_index:
+                  value:
+                    error: Invalid index
+
+  /api/todos/complete-by-title:
+    post:
+      summary: Complete a todo by title search
+      description: Finds the first incomplete todo whose title contains the specified search string (case-insensitive) and marks it as completed.
+      operationId: completeTodoByTitle
+      tags:
+        - Todos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  description: Search string to match against todo titles (case-insensitive, partial match)
+            examples:
+              by_title:
+                value:
+                  title: groceries
+      responses:
+        '200':
+          description: Todo successfully marked as completed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - todo
+                  - todos
+                properties:
+                  todo:
+                    $ref: '#/components/schemas/Todo'
+                  todos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Todo'
+              examples:
+                success:
+                  value:
+                    todo:
+                      id: todo-1
+                      title: Buy groceries
+                      completed: true
+                    todos:
+                      - id: todo-1
+                        title: Buy groceries
+                        completed: true
+
+        '400':
+          description: Invalid request or no matching todo found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_title:
+                  value:
+                    error: Missing search title
+                not_found:
+                  value:
+                    error: No incomplete todo found matching this title
+
+components:
+  schemas:
+    Todo:
+      type: object
+      required:
+        - id
+        - title
+        - completed
+      properties:
+        id:
+          type: string
+          pattern: '^todo-\d+$'
+          description: Unique identifier for the todo (auto-generated)
+        title:
+          type: string
+          minLength: 1
+          description: The todo's title text
+        completed:
+          type: boolean
+          description: Whether the todo has been completed
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+
+tags:
+  - name: Todos
+    description: Operations for managing todos

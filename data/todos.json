@@ -1,10 +1,15 @@
 {
   "todos": [
     {
-      "id": "todo-12",
-      "title": "talk about mcp jam tomorrow",
-      "completed": false
+      "id": "todo-2",
+      "title": "Walk the dog",
+      "completed": true
+    },
+    {
+      "id": "todo-3",
+      "title": "Third todo",
+      "completed": true
     }
   ],
-  "nextId": 13
+  "nextId": 4
 }
