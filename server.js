@@ -36,6 +36,72 @@ const replyWithTodos = (message, tasks) => ({
   structuredContent: { tasks },
 });
 
+// Internal API call helper for MCP tools
+// Makes direct calls to REST API logic without HTTP overhead
+const callInternalApi = async (method, path, body = null) => {
+  if (method === "GET" && path === "/api/todos") {
+    return { ok: true, todos: todoService.list() };
+  }
+
+  if (method === "POST" && path === "/api/todos") {
+    const title = body?.title?.trim?.();
+    if (!title) {
+      return { ok: false, error: "Missing or empty title" };
+    }
+    const todo = await todoService.add(title);
+    return { ok: true, todo, todos: todoService.list() };
+  }
+
+  if (method === "POST" && path === "/api/todos/complete-by-index") {
+    const index = body?.index;
+    if (!Number.isInteger(index) || index < 1) {
+      return { ok: false, error: "Invalid index" };
+    }
+    const result = await todoService.completeByIndex(index);
+    if (!result.ok) {
+      return { ok: false, error: "Invalid index" };
+    }
+    return { ok: true, todo: result.todo, todos: todoService.list() };
+  }
+
+  if (method === "POST" && path === "/api/todos/complete-by-title") {
+    const searchTitle = body?.title?.trim?.();
+    if (!searchTitle) {
+      return { ok: false, error: "Missing search title" };
+    }
+    const result = await todoService.completeByTitle(searchTitle);
+    if (!result.ok) {
+      return { ok: false, error: "No match found" };
+    }
+    return { ok: true, todo: result.todo, todos: todoService.list() };
+  }
+
+  const apiIdMatch = path.match(/^\/api\/todos\/([^/]+)$/);
+  if (apiIdMatch) {
+    const id = apiIdMatch[1];
+
+    if (method === "PUT") {
+      const result = await todoService.completeById(id);
+      if (!result.ok) {
+        return { ok: false, error: `Todo ${id} not found` };
+      }
+      return { ok: true, todo: result.todo, todos: todoService.list() };
+    }
+
+    if (method === "DELETE") {
+      const todo = todoService.list().find((t) => t.id === id);
+      if (!todo) {
+        return { ok: false, error: `Todo ${id} not found` };
+      }
+      todoService.todos = todoService.list().filter((t) => t.id !== id);
+      await todoService.save();
+      return { ok: true, todo, todos: todoService.list() };
+    }
+  }
+
+  return { ok: false, error: "Not found" };
+};
+
 function createTodoServer() {
   const server = new McpServer({ name: "todo-app", version: "0.1.0" });
 
@@ -68,9 +134,11 @@ function createTodoServer() {
     },
     async (args) => {
       const title = args?.title?.trim?.() ?? "";
-      if (!title) return replyWithTodos("Missing title.", todoService.list());
-      const todo = await todoService.add(title);
-      return replyWithTodos(`Added "${todo.title}".`, todoService.list());
+      const result = await callInternalApi("POST", "/api/todos", { title });
+      if (!result.ok) {
+        return replyWithTodos("Missing title.", result.todos ?? []);
+      }
+      return replyWithTodos(`Added "${result.todo.title}".`, result.todos);
     }
   );
 
@@ -87,15 +155,18 @@ function createTodoServer() {
     },
     async (args) => {
       const id = args?.id;
-      if (!id) return replyWithTodos("Missing todo id.", todoService.list());
-      const result = await todoService.completeById(id);
+      if (!id) {
+        const list = await callInternalApi("GET", "/api/todos");
+        return replyWithTodos("Missing todo id.", list.todos);
+      }
+      const result = await callInternalApi("PUT", `/api/todos/${id}`);
       if (!result.ok) {
-        return replyWithTodos(`Todo ${id} was not found.`, todoService.list());
+        return replyWithTodos(`Todo ${id} was not found.`, result.todos ?? []);
       }
 
       return replyWithTodos(
         `Completed "${result.todo.title}".`,
-        todoService.list()
+        result.todos
       );
     }
   );
@@ -112,7 +183,8 @@ function createTodoServer() {
       },
     },
     async () => {
-      const list = todoService.list();
+      const result = await callInternalApi("GET", "/api/todos");
+      const list = result.todos;
       if (list.length === 0) {
         return replyWithTodos("No todos yet.", list);
       }
@@ -140,27 +212,22 @@ function createTodoServer() {
     async (args) => {
       const index = args?.index;
       if (!index) {
-        return replyWithTodos("Missing todo index.", todoService.list());
+        const list = await callInternalApi("GET", "/api/todos");
+        return replyWithTodos("Missing todo index.", list.todos);
       }
 
-      const result = await todoService.completeByIndex(index);
-      if (!result.ok && result.reason === "invalid_index") {
+      const result = await callInternalApi("POST", "/api/todos/complete-by-index", { index });
+      if (!result.ok) {
+        const list = await callInternalApi("GET", "/api/todos");
         return replyWithTodos(
-          `Invalid index. There are only ${todoService.list().length} todo(s).`,
-          todoService.list()
-        );
-      }
-
-      if (result.todo.completed) {
-        return replyWithTodos(
-          `"${result.todo.title}" is already completed.`,
-          todoService.list()
+          `Invalid index. There are only ${list.todos.length} todo(s).`,
+          list.todos
         );
       }
 
       return replyWithTodos(
         `Completed "${result.todo.title}" (task #${index}).`,
-        todoService.list()
+        result.todos
       );
     }
   );
@@ -179,20 +246,22 @@ function createTodoServer() {
     async (args) => {
       const searchTitle = args?.title?.trim?.() ?? "";
       if (!searchTitle) {
-        return replyWithTodos("Missing search title.", todoService.list());
+        const list = await callInternalApi("GET", "/api/todos");
+        return replyWithTodos("Missing search title.", list.todos);
       }
 
-      const result = await todoService.completeByTitle(searchTitle);
+      const result = await callInternalApi("POST", "/api/todos/complete-by-title", { title: searchTitle });
       if (!result.ok) {
+        const list = await callInternalApi("GET", "/api/todos");
         return replyWithTodos(
           `No incomplete todo found matching "${searchTitle}".`,
-          todoService.list()
+          list.todos
         );
       }
 
       return replyWithTodos(
         `Completed "${result.todo.title}".`,
-        todoService.list()
+        result.todos
       );
     }
   );
@@ -281,6 +350,50 @@ const httpServer = createServer(async (req, res) => {
       }
       return;
     }
+  }
+
+  // Complete todo by index endpoint
+  if (url.pathname === `${API_BASE}/complete-by-index` && req.method === "POST") {
+    try {
+      const body = await parseJsonBody(req);
+      const index = body.index;
+      if (!Number.isInteger(index) || index < 1) {
+        sendJson(res, 400, { error: "Invalid index" });
+        return;
+      }
+      const result = await todoService.completeByIndex(index);
+      if (!result.ok) {
+        sendJson(res, 400, { error: "Invalid index" });
+        return;
+      }
+      sendJson(res, 200, { todo: result.todo, todos: todoService.list() });
+    } catch (error) {
+      console.error("Error completing todo by index:", error);
+      sendJson(res, 400, { error: "Invalid request body" });
+    }
+    return;
+  }
+
+  // Complete todo by title endpoint
+  if (url.pathname === `${API_BASE}/complete-by-title` && req.method === "POST") {
+    try {
+      const body = await parseJsonBody(req);
+      const searchTitle = body.title?.trim?.();
+      if (!searchTitle) {
+        sendJson(res, 400, { error: "Missing search title" });
+        return;
+      }
+      const result = await todoService.completeByTitle(searchTitle);
+      if (!result.ok) {
+        sendJson(res, 400, { error: "No incomplete todo found matching this title" });
+        return;
+      }
+      sendJson(res, 200, { todo: result.todo, todos: todoService.list() });
+    } catch (error) {
+      console.error("Error completing todo by title:", error);
+      sendJson(res, 400, { error: "Invalid request body" });
+    }
+    return;
   }
 
   // Match /api/todos/:id pattern
