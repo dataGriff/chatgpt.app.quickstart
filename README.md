@@ -161,8 +161,7 @@ Test the REST API directly — see the [API Reference](docs/api-reference.md) fo
 | Document | Description |
 |----------|-------------|
 | [OpenAPI Specification](docs/openapi.yaml) | Machine-readable REST API specification (OpenAPI 3.0.0) |
-| [API Reference](docs/api-reference.md) | REST API endpoints, request/response shapes |
-| [API Compliance Report](docs/API_COMPLIANCE.md) | Validation that implementation adheres to OpenAPI spec |
+| [API Reference](docs/api-reference.md) | REST API endpoints, OpenAPI spec usage, request/response shapes |
 | [Architecture](docs/architecture.md) | System design, layers, and design decisions |
 | [MCP Tools](docs/mcp-tools.md) | MCP tool definitions, inputs, and transport details |
 | [Contributing](docs/contributing.md) | Code standards, commit conventions, and setup |

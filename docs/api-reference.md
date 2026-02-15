@@ -6,6 +6,14 @@ All endpoints return JSON with `Content-Type: application/json` and `Access-Cont
 
 Request bodies are limited to 1 MB. Payloads exceeding this limit receive a `413` response.
 
+## OpenAPI Specification
+
+This API is fully documented in [openapi.yaml](openapi.yaml) using OpenAPI 3.0.0. You can:
+
+- **View interactive docs**: Paste the spec into [Swagger Editor](https://editor.swagger.io/) or use tools like [ReDoc](https://redoc.ly/)
+- **Test endpoints**: Import the spec into Insomnia, Postman, or VS Code REST Client
+- **Generate SDKs**: Use [OpenAPI Generator](https://openapi-generator.tech/) to create client libraries
+
 ---
 
 ## List Todos
