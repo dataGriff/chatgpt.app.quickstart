@@ -12,72 +12,6 @@ const port = Number(process.env.PORT ?? 8787);
 const MCP_PATH = "/mcp";
 const API_BASE = "/api/todos";
 
-// Internal API call helper for MCP tools
-// Makes direct calls to REST API logic without HTTP overhead
-const callInternalApi = async (method, path, body = null) => {
-  if (method === "GET" && path === "/api/todos") {
-    return { ok: true, todos: todoService.list() };
-  }
-
-  if (method === "POST" && path === "/api/todos") {
-    const title = body?.title?.trim?.();
-    if (!title) {
-      return { ok: false, error: "Missing or empty title" };
-    }
-    const todo = await todoService.add(title);
-    return { ok: true, todo, todos: todoService.list() };
-  }
-
-  if (method === "POST" && path === "/api/todos/complete-by-index") {
-    const index = body?.index;
-    if (!Number.isInteger(index) || index < 1) {
-      return { ok: false, error: "Invalid index" };
-    }
-    const result = await todoService.completeByIndex(index);
-    if (!result.ok) {
-      return { ok: false, error: "Invalid index" };
-    }
-    return { ok: true, todo: result.todo, todos: todoService.list() };
-  }
-
-  if (method === "POST" && path === "/api/todos/complete-by-title") {
-    const searchTitle = body?.title?.trim?.();
-    if (!searchTitle) {
-      return { ok: false, error: "Missing search title" };
-    }
-    const result = await todoService.completeByTitle(searchTitle);
-    if (!result.ok) {
-      return { ok: false, error: "No match found" };
-    }
-    return { ok: true, todo: result.todo, todos: todoService.list() };
-  }
-
-  const apiIdMatch = path.match(/^\/api\/todos\/([^/]+)$/);
-  if (apiIdMatch) {
-    const id = apiIdMatch[1];
-
-    if (method === "PUT") {
-      const result = await todoService.completeById(id);
-      if (!result.ok) {
-        return { ok: false, error: `Todo ${id} not found` };
-      }
-      return { ok: true, todo: result.todo, todos: todoService.list() };
-    }
-
-    if (method === "DELETE") {
-      const todo = todoService.list().find((t) => t.id === id);
-      if (!todo) {
-        return { ok: false, error: `Todo ${id} not found` };
-      }
-      todoService.todos = todoService.list().filter((t) => t.id !== id);
-      await todoService.save();
-      return { ok: true, todo, todos: todoService.list() };
-    }
-  }
-
-  return { ok: false, error: "Not found" };
-};
-
 // Create REST API route handler
 const handleTodoRoutes = createTodoRoutes(todoService, API_BASE);
 
@@ -112,13 +46,13 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  // MCP endpoint
+  // MCP endpoint — new server + transport per request (stateless mode)
   const MCP_METHODS = new Set(["POST", "GET", "DELETE"]);
   if (url.pathname === MCP_PATH && req.method && MCP_METHODS.has(req.method)) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
-    const server = createTodoServer(todoHtml, callInternalApi);
+    const server = createTodoServer(todoHtml, todoService);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless mode
       enableJsonResponse: true,

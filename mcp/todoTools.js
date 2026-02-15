@@ -28,11 +28,12 @@ const replyWithTodos = (message, tasks) => ({
 });
 
 /**
- * Creates an MCP server with todo tools registered
+ * Creates an MCP server with todo tools registered.
+ * Tools call TodoService directly — no internal HTTP simulation.
  * @param {string} todoHtml - HTML content for the todo widget
- * @param {Function} callInternalApi - Function to call internal API
+ * @param {import("../services/todoService.js").TodoService} todoService
  */
-export function createTodoServer(todoHtml, callInternalApi) {
+export function createTodoServer(todoHtml, todoService) {
   const server = new McpServer({ name: "todo-app", version: "0.1.0" });
 
   registerAppResource(
@@ -62,13 +63,9 @@ export function createTodoServer(todoHtml, callInternalApi) {
         ui: { resourceUri: "ui://widget/todo.html" },
       },
     },
-    async (args) => {
-      const title = args?.title?.trim?.() ?? "";
-      const result = await callInternalApi("POST", "/api/todos", { title });
-      if (!result.ok) {
-        return replyWithTodos("Missing title.", result.todos ?? []);
-      }
-      return replyWithTodos(`Added "${result.todo.title}".`, result.todos);
+    async ({ title }) => {
+      const todo = await todoService.add(title.trim());
+      return replyWithTodos(`Added "${todo.title}".`, todoService.list());
     }
   );
 
@@ -83,20 +80,14 @@ export function createTodoServer(todoHtml, callInternalApi) {
         ui: { resourceUri: "ui://widget/todo.html" },
       },
     },
-    async (args) => {
-      const id = args?.id;
-      if (!id) {
-        const list = await callInternalApi("GET", "/api/todos");
-        return replyWithTodos("Missing todo id.", list.todos);
-      }
-      const result = await callInternalApi("PUT", `/api/todos/${id}`);
+    async ({ id }) => {
+      const result = await todoService.completeById(id);
       if (!result.ok) {
-        return replyWithTodos(`Todo ${id} was not found.`, result.todos ?? []);
+        return replyWithTodos(`Todo ${id} was not found.`, todoService.list());
       }
-
       return replyWithTodos(
         `Completed "${result.todo.title}".`,
-        result.todos
+        todoService.list()
       );
     }
   );
@@ -113,8 +104,7 @@ export function createTodoServer(todoHtml, callInternalApi) {
       },
     },
     async () => {
-      const result = await callInternalApi("GET", "/api/todos");
-      const list = result.todos;
+      const list = todoService.list();
       if (list.length === 0) {
         return replyWithTodos("No todos yet.", list);
       }
@@ -139,25 +129,18 @@ export function createTodoServer(todoHtml, callInternalApi) {
         ui: { resourceUri: "ui://widget/todo.html" },
       },
     },
-    async (args) => {
-      const index = args?.index;
-      if (!index) {
-        const list = await callInternalApi("GET", "/api/todos");
-        return replyWithTodos("Missing todo index.", list.todos);
-      }
-
-      const result = await callInternalApi("POST", "/api/todos/complete-by-index", { index });
+    async ({ index }) => {
+      const result = await todoService.completeByIndex(index);
       if (!result.ok) {
-        const list = await callInternalApi("GET", "/api/todos");
+        const list = todoService.list();
         return replyWithTodos(
-          `Invalid index. There are only ${list.todos.length} todo(s).`,
-          list.todos
+          `Invalid index. There are only ${list.length} todo(s).`,
+          list
         );
       }
-
       return replyWithTodos(
         `Completed "${result.todo.title}" (task #${index}).`,
-        result.todos
+        todoService.list()
       );
     }
   );
@@ -173,25 +156,41 @@ export function createTodoServer(todoHtml, callInternalApi) {
         ui: { resourceUri: "ui://widget/todo.html" },
       },
     },
-    async (args) => {
-      const searchTitle = args?.title?.trim?.() ?? "";
-      if (!searchTitle) {
-        const list = await callInternalApi("GET", "/api/todos");
-        return replyWithTodos("Missing search title.", list.todos);
-      }
-
-      const result = await callInternalApi("POST", "/api/todos/complete-by-title", { title: searchTitle });
+    async ({ title }) => {
+      const result = await todoService.completeByTitle(title.trim());
       if (!result.ok) {
-        const list = await callInternalApi("GET", "/api/todos");
         return replyWithTodos(
-          `No incomplete todo found matching "${searchTitle}".`,
-          list.todos
+          `No incomplete todo found matching "${title}".`,
+          todoService.list()
         );
       }
-
       return replyWithTodos(
         `Completed "${result.todo.title}".`,
-        result.todos
+        todoService.list()
+      );
+    }
+  );
+
+  registerAppTool(
+    server,
+    "delete_completed",
+    {
+      title: "Delete completed todos",
+      description: "Removes all completed todos from the list.",
+      inputSchema: {},
+      _meta: {
+        ui: { resourceUri: "ui://widget/todo.html" },
+      },
+    },
+    async () => {
+      const result = await todoService.deleteCompleted();
+      const count = result.deleted.length;
+      if (count === 0) {
+        return replyWithTodos("No completed todos to clear.", todoService.list());
+      }
+      return replyWithTodos(
+        `Cleared ${count} completed todo${count !== 1 ? 's' : ''}.`,
+        todoService.list()
       );
     }
   );

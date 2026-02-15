@@ -33,3 +33,6 @@ build/
 # Test
 .nyc_output/
 coverage/
+
+# Runtime data
+data/todos.json

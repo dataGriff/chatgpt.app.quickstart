@@ -377,18 +377,26 @@
         }
       });
 
-      clearBtn.addEventListener("click", () => {
-        const completedIds = tasks
-          .filter((task) => task.completed)
-          .map((task) => task.id);
-        
-        if (completedIds.length === 0) {
+      clearBtn.addEventListener("click", async () => {
+        const hasCompleted = tasks.some((task) => task.completed);
+
+        if (!hasCompleted) {
           alert("No completed tasks to clear.");
           return;
         }
 
-        tasks = tasks.filter((task) => !task.completed);
-        render();
+        clearBtn.disabled = true;
+        const originalText = clearBtn.textContent;
+        clearBtn.textContent = "Clearing…";
+
+        try {
+          await callTodoTool("delete_completed", {});
+        } catch (error) {
+          console.error("Failed to clear completed todos:", error);
+        } finally {
+          clearBtn.disabled = false;
+          clearBtn.textContent = originalText;
+        }
       });
 
       render();
